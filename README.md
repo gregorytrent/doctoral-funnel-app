@@ -15,6 +15,9 @@ Doctoral Funnel App is a browser-based research design coach that helps doctoral
 - Markdown research blueprint export
 - Optional AI-in-HR dissertation starter example
 - Verification warnings for claims that need scholarly sources
+- Stage-specific question/claim planning and MEAL (Main claim, Evidence, Analysis, Link) drafting
+- Source synthesis matrix with themes, methods, findings, limitations, counterevidence, and reading status
+- Planning and source matrix included in saved projects and blueprint exports
 
 ## Six Funnel Stages
 
@@ -46,3 +49,11 @@ The app is a static Vite build and can be hosted with GitHub Pages by publishing
 ## Academic Caution
 
 The app gives structured reasoning feedback. It does not verify literature claims. Any scholarly evidence or research gap should be checked against current peer-reviewed sources before being used in a dissertation proposal.
+
+Scores are heuristic structural signals, not validated measures of research quality or committee readiness. Citations and reading checkboxes do not remove verification flags.
+
+## Resource Basis
+
+Planning tools were informed by National University's synthesis and analysis guides at https://resources.nu.edu/researchtools/synthesisandanalysis and https://resources.nu.edu/researchtools/synthesishowto, together with the user's doctoral literature review workshop notes. The workshop notes were AI-generated summaries, not a verified transcript. No workshop example statistics or example citations are presented as empirical evidence. Private source documents are not included in this public repository.
+
+The six-stage research-design funnel remains distinct from the workshop's literature-review outline. Planning can explore a proposed contribution, but does not presume the study's findings or solution.

@@ -1,3 +1,5 @@
+import { researchSupportBlueprint } from "./research-support.js";
+
 export const starterExample = {
   discipline: "Business / Human Resource Management",
   projectTitle: "AI Integration, Workforce Transformation, and Change Management",
@@ -191,6 +193,10 @@ export function analyzeStage(stageId, answer, allAnswers = {}) {
   else actions.push(`Tie the answer more directly to this stage: ${targetTerms.slice(0, 4).join(", ")}.`);
 
   if (hasAssumptionSignal) cautions.push("Some wording sounds assumption-led; convert broad claims into verifiable claims.");
+  if (stageId === "evidence" || stageId === "gap") {
+    cautions.push("Citation wording does not verify a claim. Check the original sources and document how they support this interpretation.");
+    if (hasVerificationNeed) actions.push("Resolve the verification needs you identified before relying on these claims.");
+  }
   if ((stageId === "evidence" || stageId === "gap") && !hasSourceSignal) {
     cautions.push("This stage needs source verification before it can be treated as scholarly evidence.");
     actions.push("Mark at least one claim for literature verification and later attach sources.");
@@ -210,7 +216,7 @@ export function analyzeStage(stageId, answer, allAnswers = {}) {
     cautions,
     actions,
     alignment,
-    verificationRequired: stageId === "evidence" || stageId === "gap" ? !hasSourceSignal || hasVerificationNeed : false
+    verificationRequired: stageId === "evidence" || stageId === "gap"
   };
 }
 
@@ -261,9 +267,9 @@ export function analyzeProject(answers = {}) {
     stageResults,
     readiness:
       average >= 78 && blockers.length === 0
-        ? "Blueprint is approaching committee-ready logic."
+        ? "Structural signals are strong; advisor review is still required."
         : average >= 62
-          ? "Blueprint has a workable spine, with revisions needed before defense."
+          ? "Structural signals are present; evidence verification and advisor review remain."
           : "Blueprint needs stronger boundaries, evidence, and construct alignment.",
     blockers,
     recommendations
@@ -313,7 +319,7 @@ export function buildBlueprint(project) {
   lines.push("");
   lines.push(projectAnalysis.recommendations[0] || "Attach verified peer-reviewed sources and refine the methodology section.");
 
-  return lines.join("\n");
+  return lines.join("\n") + researchSupportBlueprint(project);
 }
 
 function keywordSet(text) {

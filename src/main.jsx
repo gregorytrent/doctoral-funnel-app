@@ -17,6 +17,8 @@ import {
   VolumeX
 } from "lucide-react";
 import { analyzeProject, analyzeStage, buildBlueprint, stages, starterExample } from "./analysis.js";
+import { normalizeResearchSupport, reviewResearchSupport } from "./research-support.js";
+import { SourceMatrix, StagePlanning } from "./research-tools.jsx";
 import "./styles.css";
 
 const storageKey = "doctoral-funnel-app.project.v1";
@@ -25,7 +27,9 @@ const emptyProject = {
   discipline: "",
   projectTitle: "Untitled Doctoral Funnel",
   answers: Object.fromEntries(stages.map((stage) => [stage.id, ""])),
-  notes: ""
+  notes: "",
+  planning: {},
+  sources: []
 };
 
 function App() {
@@ -42,6 +46,10 @@ function App() {
 
   const activeStage = stages[activeIndex];
   const activeAnswer = project.answers[activeStage.id] || "";
+  const activePlan = project.planning?.[activeStage.id] || {};
+  const sources = project.sources || [];
+  const researchReview = reviewResearchSupport(activeStage.id, activePlan, sources);
+  const adaptivePrompts = [...researchReview.prompts, ...activeStage.adaptivePrompts].slice(0, 5);
   const stageAnalysis = useMemo(
     () => analyzeStage(activeStage.id, activeAnswer, project.answers),
     [activeStage.id, activeAnswer, project.answers]
@@ -100,7 +108,7 @@ function App() {
     window.speechSynthesis.cancel();
     const analysisText =
       includeAnalysis && activeStage.id === stage.id
-        ? `Current readiness score is ${stageAnalysis.score}. ${stageAnalysis.actions[0] || "Continue refining your answer."}`
+        ? `${researchReview.feedback[0] || stageAnalysis.actions[0] || "Continue refining your answer."} ${researchReview.prompts[0] || ""}`
         : "";
     const utterance = new SpeechSynthesisUtterance(`${stage.narration} ${stage.prompt} ${analysisText}`);
     const selectedVoice = voices.find((voice) => voice.voiceURI === voiceURI) || voices[0];
@@ -152,6 +160,7 @@ function App() {
 
   function loadStarter() {
     setProject({
+      ...emptyProject,
       discipline: starterExample.discipline,
       projectTitle: starterExample.projectTitle,
       answers: { ...emptyProject.answers, ...starterExample.answers },
@@ -203,6 +212,7 @@ function App() {
         setProject({
           ...emptyProject,
           ...parsed,
+          ...normalizeResearchSupport(parsed),
           answers: { ...emptyProject.answers, ...(parsed.answers || {}) }
         });
         setActiveIndex(0);
@@ -314,7 +324,7 @@ function App() {
           )}
 
           <div className="prompt-strip" aria-label="Adaptive prompts">
-            {activeStage.adaptivePrompts.map((prompt) => (
+            {adaptivePrompts.map((prompt) => (
               <button
                 key={prompt}
                 type="button"
@@ -352,11 +362,15 @@ function App() {
               <ArrowRight aria-hidden="true" />
             </button>
           </div>
+          <StagePlanning plan={activePlan} onChange={(key, value) => setProject((current) => ({
+            ...current,
+            planning: { ...current.planning, [activeStage.id]: { ...activePlan, [key]: value } }
+          }))} />
         </section>
 
         <aside className="analysis-panel" aria-label="Answer analysis">
           <div className="score-card">
-            <span>Stage score</span>
+            <span>Structural score (heuristic)</span>
             <strong>{stageAnalysis.score}/100</strong>
             <div className="meter" aria-hidden="true">
               <span style={{ width: `${stageAnalysis.score}%` }} />
@@ -368,6 +382,7 @@ function App() {
           <Feedback title="Strengths" items={stageAnalysis.strengths} empty="No strengths detected yet. Add more substance and boundaries." />
           <Feedback title="Cautions" items={stageAnalysis.cautions} empty="No major cautions at this stage." />
           <Feedback title="Actionable revisions" items={stageAnalysis.actions} empty="This answer is ready to move forward for now." />
+          {researchReview.feedback.length > 0 && <Feedback title="Synthesis review" items={researchReview.feedback} />}
 
           <div className="alignment-card">
             <BookOpenCheck aria-hidden="true" />
@@ -398,6 +413,8 @@ function App() {
           </div>
         </aside>
       </section>
+
+      <SourceMatrix sources={sources} onChange={(nextSources) => setProject((current) => ({ ...current, sources: nextSources }))} />
 
       <section className="blueprint-preview" aria-label="Research blueprint preview">
         <div>
@@ -469,6 +486,7 @@ function loadProject() {
     return {
       ...emptyProject,
       ...parsed,
+      ...normalizeResearchSupport(parsed),
       answers: { ...emptyProject.answers, ...(parsed.answers || {}) }
     };
   } catch {

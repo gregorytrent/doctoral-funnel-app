@@ -29,6 +29,68 @@ body {
   min-height: 100vh;
 }
 
+.research-planning {
+  margin-top: 1.5rem;
+  border-top: 1px solid var(--line);
+  padding-top: 1rem;
+}
+
+.research-planning summary {
+  cursor: pointer;
+  font-weight: 750;
+  padding: 0.5rem 0;
+}
+
+.planning-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.planning-grid textarea {
+  min-height: 100px;
+}
+
+.source-matrix {
+  margin-top: 2rem;
+  padding: 2rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.matrix-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.source-row {
+  padding: 1.5rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.source-status {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.read-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.read-checkbox input {
+  width: 18px;
+  min-height: 18px;
+}
+
+@media (max-width: 640px) {
+  .planning-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
 button,
 input,
 select,
