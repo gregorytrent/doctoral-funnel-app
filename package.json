@@ -1,0 +1,21 @@
+{
+  "name": "doctoral-funnel-app",
+  "version": "1.0.0",
+  "description": "An animated doctoral research funnel app with narration, voice input, adaptive questioning, answer analysis, save/resume, and blueprint export.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "start": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "node tests/analysis.test.mjs"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^5.0.0",
+    "vite": "^7.1.7",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "lucide-react": "^0.544.0"
+  },
+  "devDependencies": {}
+}

@@ -1,0 +1,440 @@
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createRoot } from "react-dom/client";
+import {
+  ArrowLeft,
+  ArrowRight,
+  BookOpenCheck,
+  Download,
+  FileText,
+  Mic,
+  MicOff,
+  Pause,
+  Play,
+  RotateCcw,
+  Save,
+  Sparkles,
+  Volume2,
+  VolumeX
+} from "lucide-react";
+import { analyzeProject, analyzeStage, buildBlueprint, stages, starterExample } from "./analysis.js";
+import "./styles.css";
+
+const storageKey = "doctoral-funnel-app.project.v1";
+
+const emptyProject = {
+  discipline: "",
+  projectTitle: "Untitled Doctoral Funnel",
+  answers: Object.fromEntries(stages.map((stage) => [stage.id, ""])),
+  notes: ""
+};
+
+function App() {
+  const [project, setProject] = useState(loadProject);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [muted, setMuted] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [notice, setNotice] = useState("");
+  const recognitionRef = useRef(null);
+
+  const activeStage = stages[activeIndex];
+  const activeAnswer = project.answers[activeStage.id] || "";
+  const stageAnalysis = useMemo(
+    () => analyzeStage(activeStage.id, activeAnswer, project.answers),
+    [activeStage.id, activeAnswer, project.answers]
+  );
+  const projectAnalysis = useMemo(() => analyzeProject(project.answers), [project.answers]);
+  const speechSupported = typeof window !== "undefined" && "speechSynthesis" in window;
+  const recognitionSupported =
+    typeof window !== "undefined" && ("SpeechRecognition" in window || "webkitSpeechRecognition" in window);
+
+  useEffect(() => {
+    localStorage.setItem(storageKey, JSON.stringify(project));
+  }, [project]);
+
+  useEffect(() => {
+    if (!muted) speakStage(activeStage, false);
+    return () => window.speechSynthesis?.cancel();
+  }, [activeIndex]);
+
+  function updateAnswer(value) {
+    setProject((current) => ({
+      ...current,
+      answers: {
+        ...current.answers,
+        [activeStage.id]: value
+      }
+    }));
+  }
+
+  function speakStage(stage, includeAnalysis = true) {
+    if (muted || !speechSupported) return;
+    window.speechSynthesis.cancel();
+    const analysisText =
+      includeAnalysis && activeStage.id === stage.id
+        ? `Current readiness score is ${stageAnalysis.score}. ${stageAnalysis.actions[0] || "Continue refining your answer."}`
+        : "";
+    const utterance = new SpeechSynthesisUtterance(`${stage.narration} ${stage.prompt} ${analysisText}`);
+    utterance.rate = 0.95;
+    utterance.pitch = 1;
+    utterance.onstart = () => setIsSpeaking(true);
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = () => setIsSpeaking(false);
+    window.speechSynthesis.speak(utterance);
+  }
+
+  function stopSpeaking() {
+    window.speechSynthesis?.cancel();
+    setIsSpeaking(false);
+  }
+
+  function toggleListening() {
+    if (!recognitionSupported) {
+      setNotice("Voice answers are not supported in this browser. Typed answers still work.");
+      return;
+    }
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setIsListening(false);
+      return;
+    }
+    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognition = new Recognition();
+    recognition.lang = "en-US";
+    recognition.interimResults = true;
+    recognition.continuous = false;
+    recognition.onstart = () => setIsListening(true);
+    recognition.onerror = () => {
+      setIsListening(false);
+      setNotice("I could not capture that voice answer. Try again or type it in.");
+    };
+    recognition.onend = () => setIsListening(false);
+    recognition.onresult = (event) => {
+      const transcript = Array.from(event.results)
+        .map((result) => result[0].transcript)
+        .join(" ");
+      updateAnswer(`${activeAnswer}${activeAnswer ? " " : ""}${transcript}`.trim());
+    };
+    recognitionRef.current = recognition;
+    recognition.start();
+  }
+
+  function loadStarter() {
+    setProject({
+      discipline: starterExample.discipline,
+      projectTitle: starterExample.projectTitle,
+      answers: { ...emptyProject.answers, ...starterExample.answers },
+      notes: "Starter example loaded. Replace any field with your own doctoral topic."
+    });
+    setActiveIndex(0);
+    setNotice("AI-in-HR starter example loaded. You can revise every stage.");
+  }
+
+  function resetProject() {
+    stopSpeaking();
+    setProject(emptyProject);
+    setActiveIndex(0);
+    setNotice("Project reset.");
+  }
+
+  function exportBlueprint() {
+    const blueprint = buildBlueprint(project);
+    const blob = new Blob([blueprint], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${slugify(project.projectTitle || "doctoral-funnel-blueprint")}.md`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    setNotice("Research blueprint exported as Markdown.");
+  }
+
+  function exportJson() {
+    const blob = new Blob([JSON.stringify({ ...project, analysis: projectAnalysis }, null, 2)], {
+      type: "application/json;charset=utf-8"
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${slugify(project.projectTitle || "doctoral-funnel-project")}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    setNotice("Project exported as JSON.");
+  }
+
+  function importProject(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(String(reader.result));
+        setProject({
+          ...emptyProject,
+          ...parsed,
+          answers: { ...emptyProject.answers, ...(parsed.answers || {}) }
+        });
+        setActiveIndex(0);
+        setNotice("Project imported.");
+      } catch {
+        setNotice("That file was not a valid Doctoral Funnel project export.");
+      }
+    };
+    reader.readAsText(file);
+    event.target.value = "";
+  }
+
+  return (
+    <main className="app-shell">
+      <section className="topbar" aria-label="Project controls">
+        <div>
+          <p className="eyebrow">Doctoral Funnel App</p>
+          <h1>Build a defensible research question, one stage at a time.</h1>
+        </div>
+        <div className="topbar-actions">
+          <button type="button" className="ghost" onClick={loadStarter}>
+            <Sparkles aria-hidden="true" />
+            AI-in-HR starter
+          </button>
+          <button type="button" className="ghost icon-only" onClick={() => setMuted((value) => !value)} title={muted ? "Unmute narration" : "Mute narration"} aria-label={muted ? "Unmute narration" : "Mute narration"}>
+            {muted ? <VolumeX aria-hidden="true" /> : <Volume2 aria-hidden="true" />}
+          </button>
+        </div>
+      </section>
+
+      <section className="workspace">
+        <aside className="funnel-panel" aria-label="Research funnel stages">
+          <div className="funnel-visual" role="list">
+            {stages.map((stage, index) => {
+              const result = analyzeStage(stage.id, project.answers[stage.id], project.answers);
+              return (
+                <button
+                  key={stage.id}
+                  type="button"
+                  role="listitem"
+                  className={`funnel-slice ${index === activeIndex ? "active" : ""}`}
+                  style={{ "--slice": index }}
+                  onClick={() => setActiveIndex(index)}
+                >
+                  <span>{stage.shortLabel}</span>
+                  <strong>{result.score}</strong>
+                </button>
+              );
+            })}
+          </div>
+          <div className="readiness">
+            <span>Overall readiness</span>
+            <strong>{projectAnalysis.average}/100</strong>
+            <div className="meter" aria-hidden="true">
+              <span style={{ width: `${projectAnalysis.average}%` }} />
+            </div>
+            <p>{projectAnalysis.readiness}</p>
+          </div>
+        </aside>
+
+        <section className="stage-panel" aria-labelledby="stage-title">
+          <div className="project-fields">
+            <label>
+              Project title
+              <input
+                value={project.projectTitle}
+                onChange={(event) => setProject((current) => ({ ...current, projectTitle: event.target.value }))}
+              />
+            </label>
+            <label>
+              Discipline
+              <input
+                value={project.discipline}
+                onChange={(event) => setProject((current) => ({ ...current, discipline: event.target.value }))}
+                placeholder="e.g., Education, Nursing, Business, Psychology"
+              />
+            </label>
+          </div>
+
+          <div className="stage-heading">
+            <div>
+              <p className="eyebrow">{activeStage.label}</p>
+              <h2 id="stage-title">{activeStage.prompt}</h2>
+            </div>
+            <div className="audio-controls">
+              <button type="button" className="icon-only" onClick={() => speakStage(activeStage)} title="Replay spoken prompt" aria-label="Replay spoken prompt">
+                <Play aria-hidden="true" />
+              </button>
+              <button type="button" className="icon-only" onClick={stopSpeaking} title="Stop narration" aria-label="Stop narration">
+                {isSpeaking ? <Pause aria-hidden="true" /> : <VolumeX aria-hidden="true" />}
+              </button>
+            </div>
+          </div>
+
+          <div className="prompt-strip" aria-label="Adaptive prompts">
+            {activeStage.adaptivePrompts.map((prompt) => (
+              <button
+                key={prompt}
+                type="button"
+                onClick={() => updateAnswer(`${activeAnswer}${activeAnswer ? "\n\n" : ""}${prompt} `)}
+              >
+                {prompt}
+              </button>
+            ))}
+          </div>
+
+          <label className="answer-box">
+            Your answer
+            <textarea
+              value={activeAnswer}
+              onChange={(event) => updateAnswer(event.target.value)}
+              placeholder="Think aloud here. The app will test whether the answer is specific, coherent, evidence-aware, measurable, and aligned with the funnel."
+            />
+          </label>
+
+          <div className="stage-actions">
+            <button type="button" className="ghost" onClick={() => setActiveIndex(Math.max(0, activeIndex - 1))} disabled={activeIndex === 0}>
+              <ArrowLeft aria-hidden="true" />
+              Back
+            </button>
+            <button type="button" className={isListening ? "danger" : "ghost"} onClick={toggleListening}>
+              {isListening ? <MicOff aria-hidden="true" /> : <Mic aria-hidden="true" />}
+              {isListening ? "Stop voice" : "Voice answer"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveIndex(Math.min(stages.length - 1, activeIndex + 1))}
+              disabled={activeIndex === stages.length - 1}
+            >
+              Next
+              <ArrowRight aria-hidden="true" />
+            </button>
+          </div>
+        </section>
+
+        <aside className="analysis-panel" aria-label="Answer analysis">
+          <div className="score-card">
+            <span>Stage score</span>
+            <strong>{stageAnalysis.score}/100</strong>
+            <div className="meter" aria-hidden="true">
+              <span style={{ width: `${stageAnalysis.score}%` }} />
+            </div>
+          </div>
+
+          <MetricGrid metrics={stageAnalysis.metrics} />
+
+          <Feedback title="Strengths" items={stageAnalysis.strengths} empty="No strengths detected yet. Add more substance and boundaries." />
+          <Feedback title="Cautions" items={stageAnalysis.cautions} empty="No major cautions at this stage." />
+          <Feedback title="Actionable revisions" items={stageAnalysis.actions} empty="This answer is ready to move forward for now." />
+
+          <div className="alignment-card">
+            <BookOpenCheck aria-hidden="true" />
+            <div>
+              <strong>Alignment check: {stageAnalysis.alignment.score}/100</strong>
+              <p>{stageAnalysis.alignment.message}</p>
+            </div>
+          </div>
+
+          <div className="export-actions">
+            <button type="button" onClick={exportBlueprint}>
+              <Download aria-hidden="true" />
+              Blueprint
+            </button>
+            <button type="button" className="ghost" onClick={exportJson}>
+              <Save aria-hidden="true" />
+              Project file
+            </button>
+            <label className="file-import">
+              <FileText aria-hidden="true" />
+              Import
+              <input type="file" accept="application/json" onChange={importProject} />
+            </label>
+            <button type="button" className="ghost" onClick={resetProject}>
+              <RotateCcw aria-hidden="true" />
+              Reset
+            </button>
+          </div>
+        </aside>
+      </section>
+
+      <section className="blueprint-preview" aria-label="Research blueprint preview">
+        <div>
+          <p className="eyebrow">Blueprint preview</p>
+          <h2>What your committee logic currently says</h2>
+        </div>
+        <div className="blueprint-grid">
+          {stages.map((stage) => (
+            <article key={stage.id}>
+              <span>{stage.label}</span>
+              <p>{project.answers[stage.id] || "Not answered yet."}</p>
+            </article>
+          ))}
+        </div>
+        {projectAnalysis.blockers.length > 0 && (
+          <div className="verification-warning">
+            <strong>Verification needed</strong>
+            <p>{projectAnalysis.blockers.join(" ")}</p>
+          </div>
+        )}
+      </section>
+
+      <div className="toast" role="status" aria-live="polite">
+        {notice}
+      </div>
+    </main>
+  );
+}
+
+function MetricGrid({ metrics }) {
+  const labels = {
+    completeness: "Completeness",
+    specificity: "Specificity",
+    stageFit: "Stage fit",
+    evidenceDiscipline: "Evidence discipline",
+    measurability: "Measurability",
+    feasibility: "Feasibility"
+  };
+  return (
+    <div className="metric-grid">
+      {Object.entries(metrics).map(([key, value]) => (
+        <div key={key}>
+          <span>{labels[key]}</span>
+          <strong>{value}</strong>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Feedback({ title, items, empty }) {
+  return (
+    <section className="feedback-block">
+      <h3>{title}</h3>
+      <ul>
+        {(items.length ? items : [empty]).map((item) => (
+          <li key={item}>{item}</li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function loadProject() {
+  try {
+    const saved = localStorage.getItem(storageKey);
+    if (!saved) return emptyProject;
+    const parsed = JSON.parse(saved);
+    return {
+      ...emptyProject,
+      ...parsed,
+      answers: { ...emptyProject.answers, ...(parsed.answers || {}) }
+    };
+  } catch {
+    return emptyProject;
+  }
+}
+
+function slugify(value) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "")
+    .slice(0, 80);
+}
+
+createRoot(document.getElementById("root")).render(<App />);
