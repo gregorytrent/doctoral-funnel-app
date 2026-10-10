@@ -34,6 +34,9 @@ function App() {
   const [muted, setMuted] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [voices, setVoices] = useState([]);
+  const [voiceURI, setVoiceURI] = useState(() => localStorage.getItem("doctoral-funnel.voice") || "");
+  const [speechRate, setSpeechRate] = useState(() => Number(localStorage.getItem("doctoral-funnel.speechRate")) || 0.9);
   const [notice, setNotice] = useState("");
   const recognitionRef = useRef(null);
 
@@ -51,6 +54,31 @@ function App() {
   useEffect(() => {
     localStorage.setItem(storageKey, JSON.stringify(project));
   }, [project]);
+
+  useEffect(() => {
+    if (!speechSupported) return;
+    const refreshVoices = () => {
+      const available = window.speechSynthesis.getVoices();
+      const quality = (voice) =>
+        (/natural|neural|enhanced|premium/i.test(voice.name) ? 100 : 0) +
+        (/google|microsoft|samantha|ava|allison|serena/i.test(voice.name) ? 20 : 0) +
+        (/^en-US$/i.test(voice.lang) ? 10 : 0);
+      setVoices(available.filter((voice) => /^en[-_]/i.test(voice.lang))
+        .sort((a, b) => quality(b) - quality(a) || a.name.localeCompare(b.name)));
+    };
+    refreshVoices();
+    window.speechSynthesis.addEventListener("voiceschanged", refreshVoices);
+    return () => window.speechSynthesis.removeEventListener("voiceschanged", refreshVoices);
+  }, [speechSupported]);
+
+  useEffect(() => {
+    localStorage.setItem("doctoral-funnel.voice", voiceURI);
+    localStorage.setItem("doctoral-funnel.speechRate", String(speechRate));
+  }, [voiceURI, speechRate]);
+
+  useEffect(() => {
+    if (muted) stopSpeaking();
+  }, [muted]);
 
   useEffect(() => {
     if (!muted) speakStage(activeStage, false);
@@ -75,7 +103,10 @@ function App() {
         ? `Current readiness score is ${stageAnalysis.score}. ${stageAnalysis.actions[0] || "Continue refining your answer."}`
         : "";
     const utterance = new SpeechSynthesisUtterance(`${stage.narration} ${stage.prompt} ${analysisText}`);
-    utterance.rate = 0.95;
+    const selectedVoice = voices.find((voice) => voice.voiceURI === voiceURI) || voices[0];
+    if (selectedVoice) utterance.voice = selectedVoice;
+    utterance.lang = selectedVoice?.lang || "en-US";
+    utterance.rate = speechRate;
     utterance.pitch = 1;
     utterance.onstart = () => setIsSpeaking(true);
     utterance.onend = () => setIsSpeaking(false);
@@ -265,6 +296,22 @@ function App() {
               </button>
             </div>
           </div>
+
+          {speechSupported && (
+            <div className="project-fields" aria-label="Narration preferences">
+              <label>
+                Narrator voice
+                <select value={voiceURI} onChange={(event) => { stopSpeaking(); setVoiceURI(event.target.value); }}>
+                  <option value="">Automatic{voices[0] ? ` (${voices[0].name})` : ""}</option>
+                  {voices.map((voice) => <option key={voice.voiceURI} value={voice.voiceURI}>{voice.name} ({voice.lang})</option>)}
+                </select>
+              </label>
+              <label>
+                Speaking pace: {speechRate.toFixed(2)}x
+                <input type="range" min="0.7" max="1.15" step="0.05" value={speechRate} onChange={(event) => { stopSpeaking(); setSpeechRate(Number(event.target.value)); }} />
+              </label>
+            </div>
+          )}
 
           <div className="prompt-strip" aria-label="Adaptive prompts">
             {activeStage.adaptivePrompts.map((prompt) => (
