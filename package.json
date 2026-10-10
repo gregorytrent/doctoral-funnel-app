@@ -8,7 +8,8 @@
     "start": "vite --host 127.0.0.1",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "node tests/analysis.test.mjs"
+    "test": "node tests/analysis.test.mjs && node --test tests/narration.test.mjs",
+    "narration": "node server/narration.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.0",

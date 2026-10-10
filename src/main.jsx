@@ -19,9 +19,11 @@ import {
 import { analyzeProject, analyzeStage, buildBlueprint, stages, starterExample } from "./analysis.js";
 import { normalizeResearchSupport, reviewResearchSupport } from "./research-support.js";
 import { SourceMatrix, StagePlanning } from "./research-tools.jsx";
+import { createCloudNarrator } from "./narration.js";
 import "./styles.css";
 
 const storageKey = "doctoral-funnel-app.project.v1";
+const narrationEndpoint = import.meta.env.VITE_NARRATION_URL || "";
 
 const emptyProject = {
   discipline: "",
@@ -41,8 +43,13 @@ function App() {
   const [voices, setVoices] = useState([]);
   const [voiceURI, setVoiceURI] = useState(() => localStorage.getItem("doctoral-funnel.voice") || "");
   const [speechRate, setSpeechRate] = useState(() => Number(localStorage.getItem("doctoral-funnel.speechRate")) || 0.9);
+  const [narrationMode, setNarrationMode] = useState(() => narrationEndpoint && localStorage.getItem("doctoral-funnel.narrationMode") !== "browser" ? "marin" : "browser");
+  const [narrationStatus, setNarrationStatus] = useState("");
   const [notice, setNotice] = useState("");
   const recognitionRef = useRef(null);
+  const cloudRef = useRef(null);
+  const speechRequestRef = useRef(0);
+  if (!cloudRef.current) cloudRef.current = createCloudNarrator({ endpoint: narrationEndpoint });
 
   const activeStage = stages[activeIndex];
   const activeAnswer = project.answers[activeStage.id] || "";
@@ -85,12 +92,16 @@ function App() {
   }, [voiceURI, speechRate]);
 
   useEffect(() => {
+    localStorage.setItem("doctoral-funnel.narrationMode", narrationMode);
+  }, [narrationMode]);
+
+  useEffect(() => {
     if (muted) stopSpeaking();
   }, [muted]);
 
   useEffect(() => {
     if (!muted) speakStage(activeStage, false);
-    return () => window.speechSynthesis?.cancel();
+    return stopSpeaking;
   }, [activeIndex]);
 
   function updateAnswer(value) {
@@ -103,9 +114,25 @@ function App() {
     }));
   }
 
-  function speakStage(stage, includeAnalysis = true) {
-    if (muted || !speechSupported) return;
-    window.speechSynthesis.cancel();
+  async function speakStage(stage, includeAnalysis = true) {
+    if (muted) return;
+    stopSpeaking();
+    const request = speechRequestRef.current;
+    if (narrationMode === "marin" && narrationEndpoint) {
+      setNarrationStatus("Preparing Marin narration...");
+      setIsSpeaking(true);
+      const result = await cloudRef.current.play(stage.id, speechRate, (error) => {
+        setIsSpeaking(false);
+        setNarrationStatus(error ? "Audio playback failed. Replay to try again." : "");
+      });
+      if (request !== speechRequestRef.current) return;
+      if (result === "playing") { setNarrationStatus("Marin · AI-generated stage narration"); return; }
+      setIsSpeaking(false);
+      if (result === "cancelled") return;
+      if (result === "blocked") { setNarrationStatus("Press replay to start narration."); return; }
+      setNarrationStatus(speechSupported ? "Marin is unavailable. Using the browser voice for this prompt." : "Marin is unavailable. Please read the prompt above.");
+    }
+    if (!speechSupported) return;
     const analysisText =
       includeAnalysis && activeStage.id === stage.id
         ? `${researchReview.feedback[0] || stageAnalysis.actions[0] || "Continue refining your answer."} ${researchReview.prompts[0] || ""}`
@@ -116,15 +143,18 @@ function App() {
     utterance.lang = selectedVoice?.lang || "en-US";
     utterance.rate = speechRate;
     utterance.pitch = 1;
-    utterance.onstart = () => setIsSpeaking(true);
-    utterance.onend = () => setIsSpeaking(false);
-    utterance.onerror = () => setIsSpeaking(false);
+    utterance.onstart = () => { if (request === speechRequestRef.current) setIsSpeaking(true); };
+    utterance.onend = () => { if (request === speechRequestRef.current) setIsSpeaking(false); };
+    utterance.onerror = () => { if (request === speechRequestRef.current) setIsSpeaking(false); };
     window.speechSynthesis.speak(utterance);
   }
 
   function stopSpeaking() {
+    speechRequestRef.current += 1;
+    cloudRef.current?.stop();
     window.speechSynthesis?.cancel();
     setIsSpeaking(false);
+    setNarrationStatus("");
   }
 
   function toggleListening() {
@@ -307,8 +337,16 @@ function App() {
             </div>
           </div>
 
-          {speechSupported && (
+          {(speechSupported || narrationEndpoint) && (
             <div className="project-fields" aria-label="Narration preferences">
+              <label>
+                Narration
+                <select value={narrationMode} onChange={(event) => { stopSpeaking(); setNarrationMode(event.target.value); }}>
+                  <option value="marin" disabled={!narrationEndpoint}>Marin · AI voice{!narrationEndpoint ? " (awaiting connection)" : ""}</option>
+                  <option value="browser">Browser voice</option>
+                </select>
+              </label>
+              {narrationMode === "browser" && speechSupported && (
               <label>
                 Narrator voice
                 <select value={voiceURI} onChange={(event) => { stopSpeaking(); setVoiceURI(event.target.value); }}>
@@ -316,12 +354,14 @@ function App() {
                   {voices.map((voice) => <option key={voice.voiceURI} value={voice.voiceURI}>{voice.name} ({voice.lang})</option>)}
                 </select>
               </label>
+              )}
               <label>
                 Speaking pace: {speechRate.toFixed(2)}x
                 <input type="range" min="0.7" max="1.15" step="0.05" value={speechRate} onChange={(event) => { stopSpeaking(); setSpeechRate(Number(event.target.value)); }} />
               </label>
             </div>
           )}
+          {narrationStatus && <p role="status">{narrationStatus}</p>}
 
           <div className="prompt-strip" aria-label="Adaptive prompts">
             {adaptivePrompts.map((prompt) => (
